@@ -8,6 +8,7 @@ lifecycle = "2.9.0"
 activityCompose = "1.10.1"
 composeBom = "2024.04.01"
 vehicleSdk = "2.3.2"  # 샘플은 2.3.1이지만 저장소에 없음(2.0.3, 2.3.2만 존재)
+ttsSdk = "3.3.1"  # Pleos TextToSpeech SDK (ON_DEVICE 모드만 사용)
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -22,6 +23,7 @@ androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 vehicle-sdk = { module = "ai.pleos.playground:Vehicle", version.ref = "vehicleSdk" }
+pleos-tts-sdk = { module = "ai.pleos.playground:TextToSpeech", version.ref = "ttsSdk" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
