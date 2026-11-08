@@ -1,4 +1,7 @@
 # storydrive
+
+> 현재 진행 상황: M0~M3 완료(차량 신호 구독, Pleos TTS 음성, 사건 기반 이야기 재생). APK는 Releases에 추가 예정
+
 뒷좌석 아이를 위한 Pleos Connect 차량용 이야기 앱 시제품
 
 ## 에뮬레이터 시연 참고
