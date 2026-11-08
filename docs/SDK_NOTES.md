@@ -2,6 +2,37 @@
 
 에뮬레이터: Pleos Connect v2.1.0 (Intel x86_64, API 34, Cold boot, RAM 4GB)
 
+## Pleos Vehicle SDK (차량 신호 읽기, M2)
+
+### 사용 버전과 초기화
+- `ai.pleos.playground:Vehicle:2.3.2`. 공식 샘플은 2.3.1이지만 저장소에는 2.0.3과 2.3.2만 있다.
+- `Vehicle(applicationContext)` → `initialize()`는 동기 호출이고 바로 사용할 수 있다(공식 샘플과 같은 방식). 종료 시 각 `unregister…` → `release()`.
+- 구현: `VehicleSignalMonitor.kt`. 신호마다 `check…Capabilities`로 지원 여부(AccessType READ/READ_WRITE)를 확인한 뒤, 지원되는 것만 `register…`로 구독한다. 지원되지 않으면 화면에 "이 차량에서는 사용 안 함"으로 표시한다.
+- 모든 Listener에는 `onFailed(e: Exception)`가 있다(구현 필수).
+
+### 신호별 API (클래스·함수 이름은 SDK AAR에서 확인함)
+| 신호 | API 객체 | capability 확인 | 구독 (Listener 콜백) | 권한 |
+|---|---|---|---|---|
+| 브레이크 페달 | `vehicle.getBrake()` | `checkBrakePedalStatusCapabilities` | `registerBrakePedalStatus` (`onBrakePedalStatusUpdated(Boolean)`) | `CAR_DRIVE` |
+| 기어 P/R/N/D | `vehicle.getGear()` | 없음 | `registerGearSelection` (`onSelected(VehicleGear)`), **deprecated** | `CAR_DRIVE` |
+| 방향지시등 | `vehicle.getTurnSignal()` | `checkTurnSignalStateCapabilities` | `registerTurnSignalState` (`onTurnSignalStateUpdated(TurnSignalValue: OFF/LEFT/RIGHT)`) | `CAR_LIGHTS` |
+| 와이퍼 | `vehicle.getWiper()` | `checkWiperStateCapabilities` → `Map<WindowArea, List<WiperState>>` | `registerWiperState(WindowArea, …)` (`onWiperStateUpdated(WiperState: OFF/ON/OTHER/SERVICE)`) | `CAR_WINDOWS` |
+| 시트 열선 (모든 좌석 구독, 뒷좌석 우선) | `vehicle.getSeat()` | `checkSeatTemperatureCapabilities` → `Map<SeatArea, AreaBounds<Int>>` | `registerHvacSeatTemperature(SeatArea, …)` (`onHvacSeatTemperatureUpdated(Int)`) | `CAR_SEATS` |
+| 도어 | `vehicle.getDoor()` | `checkDoorPositionCapabilities` → `Map<DoorArea, AreaBounds<Int>>` | `registerDoorPosition(DoorArea, …)` (`onPositionUpdated(Int)`) | `CAR_DOORS` |
+| 안전벨트 체결 | `vehicle.getSeat()` | `checkSeatBeltBuckledCapabilities` → `List<SeatArea>` | `registerSeatBeltBuckledState(SeatArea, …)` (`onSeatBeltBuckledStateUpdated(Boolean)`) | `CAR_SEATS` |
+| 안전벨트 경고 | `vehicle.getSafety()` | `checkSeatNotBuckledWarningCapabilities` | `registerSeatBeltNotBuckledWarning(SeatArea, …)` | `CAR_SAFETY` |
+
+- 권한은 SDK의 `@RequiresPermission` 표기 기준이다(`pleos.car.permission.*`, protectionLevel=normal). 와이퍼에는 `READ_WINDSHIELD_WIPERS`가 아니라 `CAR_WINDOWS`가 필요하다.
+- 영역 값: `SeatValue`(ROW_1_LEFT … ROW_3_RIGHT), `DoorValue`(ROW_1_LEFT … ROW_3_RIGHT, HOOD, REAR), `WindowValue`(FRONT_WINDSHIELD, REAR_WINDSHIELD …)
+
+### 에뮬레이터에서 확인한 지원 상태 (2026-11-08)
+- 지원: 브레이크(READ), 방향지시등(READ), 와이퍼(READ, 앞·뒤), 시트 열선(READ_WRITE, 1·2열 좌우), 도어(READ_WRITE, 1·2열 좌우·후드·트렁크), 안전벨트 체결(READ_WRITE, 1열 좌우, 2열 좌·중·우)
+- 미지원: 안전벨트 경고(`ERROR_NOT_SUPPORTED_PROPERTY`). 그래서 `BELT_WARN`은 안전벨트 체결 상태(체결 → 풀림)로 판단한다. 콘솔에서 벨트를 바꿀 수 없으므로 사건 판단은 M3 단위 테스트로 검증한다. `PRIVATE_CAR_SAFETY`(Telltales)는 쓰지 않는다.
+- 기어 API는 deprecated("use the Google GEAR_SELECTION property")이지만 에뮬레이터에서는 동작한다(GEAR_PARK 수신). **시제품은 현재 API를 유지하고, 출시 전 GEAR_SELECTION 전환을 검토한다.**
+- 와이퍼 `WiperState`는 OFF/ON만 구분한다. 버추얼 콘솔에서 Low와 High는 둘 다 ON으로 들어온다. 속도 단계(`WiperSwitch`)는 `getCurrentWiperSwitch`와 `checkWiperSwitchCapabilities`만 있고 구독 API가 없다. 그래서 `RAIN_HARD`는 빼고 `RAIN_ON`과 `RAIN_OFF`만 쓴다.
+- 버추얼 콘솔의 Seat Temperature 카드는 Driver와 Passenger(1열)만 바꿀 수 있다. **에뮬레이터 콘솔이 앞좌석 열선만 바꿀 수 있어 시연은 앞좌석으로 대체하고, 실제 제품은 뒷좌석 기준이다.** 앱은 모든 좌석을 구독하고 로그에 "뒷좌석/앞좌석 + 좌석 위치"를 남긴다. WARM은 뒷좌석을 우선하고 앞좌석도 인정한다.
+- 버추얼 콘솔 Telltales 카드에 Seat Belt 경고등이 있다. SDK의 `Safety.registerTelltales`는 `pleos.car.permission.PRIVATE_CAR_SAFETY` 권한이 필요하다. 이름이 PRIVATE이라 앱 심사 위험이 있어 사용하지 않기로 결정했다.
+
 ## Pleos TextToSpeech SDK (음성 합성)
 
 ### 사용 버전
