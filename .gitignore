@@ -33,3 +33,14 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Local / secret files (작업지시서 M0)
+*.env
+.env*
+secrets.properties
+keystore.properties
+signing.properties
+*.p12
+*.pem
+*.key
+.DS_Store
