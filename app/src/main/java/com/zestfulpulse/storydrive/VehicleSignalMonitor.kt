@@ -44,7 +44,12 @@ class VehicleSignalMonitor(
     interface Listener {
         /** supported=false면 화면에 "이 차량에서는 사용 안 함"으로 표시 */
         fun onSupport(signal: Signal, supported: Boolean, detail: String)
-        fun onSignal(signal: Signal, area: String?, value: String)
+        /**
+         * @param area 영역 라벨 (사건 판단용, 예: ROW_2_LEFT)
+         * @param place 화면·로그 표시용 위치 (예: "뒷좌석 ROW_2_LEFT")
+         * @param value 화면 표시용 값, [raw] 사건 판단용 원시 값 (Boolean / enum 이름 / Int)
+         */
+        fun onSignal(signal: Signal, area: String?, place: String?, value: String, raw: Any?)
     }
 
     private val vehicle = Vehicle(context.applicationContext)
@@ -88,7 +93,7 @@ class VehicleSignalMonitor(
                 if (!config.readable()) return@checkBrakePedalStatusCapabilities unsupported(Signal.BRAKE, config.describe())
                 val l = object : BrakePedalStatusListener {
                     override fun onBrakePedalStatusUpdated(status: Boolean?) =
-                        signal(Signal.BRAKE, null, if (status == true) "밟음" else "뗌")
+                        signal(Signal.BRAKE, null, if (status == true) "밟음" else "뗌", status)
                     override fun onFailed(e: Exception) = failed(Signal.BRAKE, null, e)
                 }
                 subscribe(Signal.BRAKE, config.describe()) {
@@ -104,7 +109,7 @@ class VehicleSignalMonitor(
     private fun watchGear() {
         val gear = vehicle.getGear()
         val l = object : GearSelectionListener {
-            override fun onSelected(gear: VehicleGear?) = signal(Signal.GEAR, null, gear?.name ?: "null")
+            override fun onSelected(gear: VehicleGear?) = signal(Signal.GEAR, null, gear?.name ?: "null", gear?.name)
             override fun onFailed(e: Exception) = failed(Signal.GEAR, null, e)
         }
         subscribe(Signal.GEAR, "capability 확인 API 없음") {
@@ -120,7 +125,7 @@ class VehicleSignalMonitor(
                 if (!config.readable()) return@checkTurnSignalStateCapabilities unsupported(Signal.TURN_SIGNAL, config.describe())
                 val l = object : TurnSignalStateListener {
                     override fun onTurnSignalStateUpdated(state: TurnSignalValue?) =
-                        signal(Signal.TURN_SIGNAL, null, state?.name ?: "null")
+                        signal(Signal.TURN_SIGNAL, null, state?.name ?: "null", state?.name)
                     override fun onFailed(e: Exception) = failed(Signal.TURN_SIGNAL, null, e)
                 }
                 subscribe(Signal.TURN_SIGNAL, config.describe()) {
@@ -143,7 +148,7 @@ class VehicleSignalMonitor(
                     areas.keys.forEach { area ->
                         val l = object : WiperStateListener {
                             override fun onWiperStateUpdated(state: WiperState?) =
-                                signal(Signal.WIPER, area.label(), state?.name ?: "null")
+                                signal(Signal.WIPER, area.label(), state?.name ?: "null", state?.name)
                             override fun onFailed(e: Exception) = failed(Signal.WIPER, area.label(), e)
                         }
                         wiper.registerWiperState(area, l)
@@ -174,7 +179,7 @@ class VehicleSignalMonitor(
                         val where = "${if (isRearSeat(area.label())) "뒷좌석" else "앞좌석"} ${area.label()}"
                         val l = object : HvacSeatTemperatureListener {
                             override fun onHvacSeatTemperatureUpdated(level: Int?) =
-                                signal(Signal.SEAT_HEAT, where, "단계 $level")
+                                signal(Signal.SEAT_HEAT, area.label(), "단계 $level", level, place = where)
                             override fun onFailed(e: Exception) = failed(Signal.SEAT_HEAT, where, e)
                         }
                         seat.registerHvacSeatTemperature(area, l)
@@ -198,7 +203,7 @@ class VehicleSignalMonitor(
                     bounds.keys.forEach { area ->
                         val l = object : DoorPositionListener {
                             override fun onPositionUpdated(pos: Int?) =
-                                signal(Signal.DOOR, area.label(), "위치 $pos")
+                                signal(Signal.DOOR, area.label(), "위치 $pos", pos)
                             override fun onFailed(e: Exception) = failed(Signal.DOOR, area.label(), e)
                         }
                         door.registerDoorPosition(area, l)
@@ -222,7 +227,7 @@ class VehicleSignalMonitor(
                     areas.forEach { area ->
                         val l = object : SeatBeltNotBuckledWarningListener {
                             override fun onSeatBeltNotBuckledWarningUpdated(warning: Boolean?) =
-                                signal(Signal.BELT_WARNING, area.label(), if (warning == true) "경고 켜짐" else "경고 꺼짐")
+                                signal(Signal.BELT_WARNING, area.label(), if (warning == true) "경고 켜짐" else "경고 꺼짐", warning)
                             override fun onFailed(e: Exception) = failed(Signal.BELT_WARNING, area.label(), e)
                         }
                         safety.registerSeatBeltNotBuckledWarning(area, l)
@@ -246,7 +251,7 @@ class VehicleSignalMonitor(
                     areas.forEach { area ->
                         val l = object : SeatBeltBuckledStateListener {
                             override fun onSeatBeltBuckledStateUpdated(buckled: Boolean?) =
-                                signal(Signal.BELT_BUCKLED, area.label(), if (buckled == true) "체결" else "풀림")
+                                signal(Signal.BELT_BUCKLED, area.label(), if (buckled == true) "체결" else "풀림", buckled)
                             override fun onFailed(e: Exception) = failed(Signal.BELT_BUCKLED, area.label(), e)
                         }
                         seat.registerSeatBeltBuckledState(area, l)
@@ -279,9 +284,9 @@ class VehicleSignalMonitor(
         Log.e(MainActivity.TAG, "[오류] ${signal.label}${area?.let { " $it" } ?: ""}: ${e.javaClass.simpleName} ${e.message}")
     }
 
-    private fun signal(signal: Signal, area: String?, value: String) {
-        Log.i(MainActivity.TAG, "[신호] ${signal.label}${area?.let { " $it" } ?: ""} = $value")
-        listener.onSignal(signal, area, value)
+    private fun signal(signal: Signal, area: String?, value: String, raw: Any?, place: String? = area) {
+        Log.i(MainActivity.TAG, "[신호] ${signal.label}${place?.let { " $it" } ?: ""} = $value")
+        listener.onSignal(signal, area, place, value, raw)
     }
 
     private fun CapabilityConfig.readable() =
@@ -294,8 +299,8 @@ class VehicleSignalMonitor(
     private fun WindowArea.label() = values.joinToString("+") { it.name }
 
     companion object {
-        /** 좌석 라벨(예: "ROW_2_LEFT")이 뒷좌석(2열 이후)이면 true. 로그의 위치 표시와 M3 WARM 판단에 쓴다. */
+        /** 좌석 라벨이 뒷좌석(2열 이후)이면 true. 판단 기준은 EventDetector와 같다. */
         fun isRearSeat(areaLabel: String): Boolean =
-            areaLabel.split("+").any { it.startsWith("ROW_2") || it.startsWith("ROW_3") }
+            com.zestfulpulse.storydrive.story.EventDetector.isRearSeat(areaLabel)
     }
 }
