@@ -37,7 +37,9 @@
 ### 에뮬레이터에서 확인한 것 (2026-11-08)
 - 로그: `TTS 초기화 성공` → `onReady` → `onStart` → `onDone`
 - 재생 중 CaaS 엔진(`ai.pleos.playground.caas`)의 AudioTrack이 started 상태 (USAGE_MEDIA / CONTENT_TYPE_SPEECH)
-- 짧은 문장 1개를 재생하는 데 onStart부터 onDone까지 약 38초가 걸렸다. 실제 차량과 다를 수 있으며, M3에서 장면 길이를 정할 때 참고한다.
+- 처음 측정에서 onStart부터 onDone까지 38초가 나왔지만 재현되지 않았다. 재측정(2026-11-08, 32자 문장)에서는 onStart→onDone 5.4~8.0초였고, onDone은 실제 AudioTrack 종료와 0.3초 이내로 맞았다. 사용자가 귀로 들은 재생 길이도 5초 이내였다.
+- 재생 중에 speak()를 다시 부르면 이전 발화가 끊기고, 끊긴 발화에는 onDone도 onStop도 오지 않는다. 그래서 이어 읽기는 앱에서 큐로 관리하고, onDone을 받은 뒤에 다음 문장을 speak()한다.
+- 재생 중 잡음: 시스템 알림음과 알람음에서도 같은 출력(AudioOut_D)의 underrun이 비슷한 비율로 늘어난다. 에뮬레이터와 호스트 쪽 오디오 문제로 보인다 (SDK 출력 문제 아님).
 
 ### 표준 `android.speech.tts.TextToSpeech`를 쓰지 않는 이유
 - 에뮬레이터에서 초기화가 `status=-1`로 실패하고, 앱에서 보이는 엔진 목록이 비어 있다(`engines == []`).
