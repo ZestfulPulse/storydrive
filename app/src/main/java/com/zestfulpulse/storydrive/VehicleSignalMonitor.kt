@@ -18,6 +18,8 @@ import ai.pleos.playground.vehicle.listener.SeatBeltNotBuckledWarningListener
 import ai.pleos.playground.vehicle.listener.TurnSignalStateListener
 import ai.pleos.playground.vehicle.listener.WiperStateListener
 import android.content.Context
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
 
 /** 이야기에 쓰는 차량 신호 종류 (작업지시서 4장) */
@@ -35,7 +37,13 @@ enum class Signal(val label: String) {
 /**
  * Pleos Vehicle SDK로 신호마다 capability를 확인하고, 지원되는 신호만 상태 변화를 구독한다.
  * 함수 이름은 공식 샘플(pleos-sample-vehicle-app)과 Vehicle SDK 2.3.2 AAR에서 확인한 것만 사용한다.
- * 콜백은 SDK 스레드에서 올 수 있으므로, 화면 갱신은 호출하는 쪽에서 UI 스레드로 넘긴다.
+ *
+ * 스레드 규칙:
+ * - capability 확인·구독 등록·해제·release 등 SDK를 기다리는 호출은 모두 전용 스레드([worker])에서만 한다.
+ *   메인 스레드에서 부르면 부하가 높을 때 수 초씩 막혀 ANR로 앱이 종료된다 (2026-11-10 Cold boot 시험).
+ * - [start]·[stop]은 어느 스레드에서 불러도 바로 돌아온다. 실제 작업은 [worker]에 순서대로 쌓인다.
+ * - [Listener] 콜백은 [worker]나 SDK 스레드에서 온다. 화면·이야기 상태 변경은 받는 쪽에서 메인 스레드로 넘긴다.
+ *   [stop] 이후에는 콜백을 더 보내지 않는다.
  */
 class VehicleSignalMonitor(
     context: Context,
@@ -52,41 +60,77 @@ class VehicleSignalMonitor(
         fun onSignal(signal: Signal, area: String?, place: String?, value: String, raw: Any?)
     }
 
-    private val vehicle = Vehicle(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val thread = HandlerThread("vehicle-sdk").apply { start() }
+    private val worker = Handler(thread.looper)
+
+    // vehicle·started는 worker 스레드에서만 읽고 쓴다. unregisterActions는 잠그고 다룬다.
+    private var vehicle: Vehicle? = null
     private val unregisterActions = mutableListOf<() -> Unit>()
     private var started = false
 
+    /** stop() 이후 true. 늦게 도착한 SDK 콜백을 화면으로 보내지 않는다. */
+    @Volatile private var stopped = false
+
     fun start() {
-        if (started) return
+        worker.post { startOnWorker() }
+    }
+
+    fun stop() {
+        if (stopped) return
+        stopped = true
+        worker.post {
+            if (started) {
+                synchronized(unregisterActions) {
+                    unregisterActions.forEach { runCatching(it) }
+                    unregisterActions.clear()
+                }
+                runCatching { vehicle?.release() }
+                started = false
+            }
+            thread.quitSafely()
+        }
+    }
+
+    private fun startOnWorker() {
+        if (started || stopped) return
+        val begin = android.os.SystemClock.elapsedRealtime()
         try {
-            vehicle.initialize()
+            vehicle = Vehicle(appContext).also { it.initialize() }
         } catch (e: Exception) {
             Signal.entries.forEach { unsupported(it, "Vehicle 초기화 실패: ${e.message}") }
             return
         }
         started = true
-        Log.i(MainActivity.TAG, "Vehicle SDK 초기화 성공")
-        watchBrake()
-        watchGear()
-        watchTurnSignal()
-        watchWiper()
-        watchSeatHeat()
-        watchDoors()
-        watchBeltWarning()
-        watchBeltBuckled()
-    }
-
-    fun stop() {
-        if (!started) return
-        unregisterActions.forEach { runCatching(it) }
-        unregisterActions.clear()
-        runCatching { vehicle.release() }
-        started = false
+        Log.i(MainActivity.TAG, "Vehicle SDK 초기화 성공 (스레드 ${Thread.currentThread().name})")
+        // 신호마다 확인이 끝나는 대로 onSupport가 나가므로 화면에서 순서대로 활성화된다.
+        // 각 단계 사이에 stop()이 오면 남은 신호는 건너뛴다.
+        val steps = listOf(
+            Signal.BRAKE to ::watchBrake,
+            Signal.GEAR to ::watchGear,
+            Signal.TURN_SIGNAL to ::watchTurnSignal,
+            Signal.WIPER to ::watchWiper,
+            Signal.SEAT_HEAT to ::watchSeatHeat,
+            Signal.DOOR to ::watchDoors,
+            Signal.BELT_WARNING to ::watchBeltWarning,
+            Signal.BELT_BUCKLED to ::watchBeltBuckled,
+        )
+        val v = vehicle ?: return
+        for ((signal, step) in steps) {
+            if (stopped) return
+            // worker 스레드의 예외는 앱을 종료시키므로 신호 하나의 실패로 끝낸다.
+            try {
+                step(v)
+            } catch (e: Exception) {
+                unsupported(signal, "확인 실패: ${e.javaClass.simpleName} ${e.message}")
+            }
+        }
+        Log.i(MainActivity.TAG, "차량 신호 확인 완료 (${android.os.SystemClock.elapsedRealtime() - begin}ms)")
     }
 
     // --- 신호별 구독 -------------------------------------------------------
 
-    private fun watchBrake() {
+    private fun watchBrake(vehicle: Vehicle) {
         val brake = vehicle.getBrake()
         brake.checkBrakePedalStatusCapabilities(
             { config ->
@@ -106,7 +150,7 @@ class VehicleSignalMonitor(
     }
 
     /** Gear에는 capability 확인 함수가 없어 바로 구독한다. */
-    private fun watchGear() {
+    private fun watchGear(vehicle: Vehicle) {
         val gear = vehicle.getGear()
         val l = object : GearSelectionListener {
             override fun onSelected(gear: VehicleGear?) = signal(Signal.GEAR, null, gear?.name ?: "null", gear?.name)
@@ -118,7 +162,7 @@ class VehicleSignalMonitor(
         }
     }
 
-    private fun watchTurnSignal() {
+    private fun watchTurnSignal(vehicle: Vehicle) {
         val turn = vehicle.getTurnSignal()
         turn.checkTurnSignalStateCapabilities(
             { config ->
@@ -137,7 +181,7 @@ class VehicleSignalMonitor(
         )
     }
 
-    private fun watchWiper() {
+    private fun watchWiper(vehicle: Vehicle) {
         val wiper = vehicle.getWiper()
         wiper.checkWiperStateCapabilities(
             { config: CapabilityConfig, areas: Map<WindowArea, List<WiperState>> ->
@@ -165,7 +209,7 @@ class VehicleSignalMonitor(
      * 제품 기준은 뒷좌석(2열)이다. 에뮬레이터 콘솔은 앞좌석 열선만 바꿀 수 있어서, 시연용으로 앞좌석도 받는다.
      * WARM 사건 판단(뒷좌석 우선, 앞좌석도 인정)은 M3에서 [isRearSeat]로 구분해 처리한다.
      */
-    private fun watchSeatHeat() {
+    private fun watchSeatHeat(vehicle: Vehicle) {
         val seat = vehicle.getSeat()
         seat.checkSeatTemperatureCapabilities(
             { config: CapabilityConfig, bounds ->
@@ -191,7 +235,7 @@ class VehicleSignalMonitor(
         )
     }
 
-    private fun watchDoors() {
+    private fun watchDoors(vehicle: Vehicle) {
         val door = vehicle.getDoor()
         door.checkDoorPositionCapabilities(
             { config: CapabilityConfig, bounds ->
@@ -215,7 +259,7 @@ class VehicleSignalMonitor(
         )
     }
 
-    private fun watchBeltWarning() {
+    private fun watchBeltWarning(vehicle: Vehicle) {
         val safety = vehicle.getSafety()
         safety.checkSeatNotBuckledWarningCapabilities(
             { config: CapabilityConfig, areas: List<SeatArea> ->
@@ -239,7 +283,7 @@ class VehicleSignalMonitor(
         )
     }
 
-    private fun watchBeltBuckled() {
+    private fun watchBeltBuckled(vehicle: Vehicle) {
         val seat = vehicle.getSeat()
         seat.checkSeatBeltBuckledCapabilities(
             { config: CapabilityConfig, areas: List<SeatArea> ->
@@ -265,11 +309,18 @@ class VehicleSignalMonitor(
 
     // --- 공통 -------------------------------------------------------------
 
+    /**
+     * capability 콜백 안에서 구독을 등록한다. 콜백이 worker가 아닌 SDK 스레드에서 와도
+     * stop()의 해제와 겹치지 않도록 [unregisterActions]로 잠근다. stop() 뒤에는 등록하지 않는다.
+     */
     private inline fun subscribe(signal: Signal, detail: String, block: () -> Unit) {
         try {
-            block()
+            synchronized(unregisterActions) {
+                if (stopped) return
+                block()
+            }
             Log.i(MainActivity.TAG, "[지원] ${signal.label} 구독 시작 ($detail)")
-            listener.onSupport(signal, true, detail)
+            if (!stopped) listener.onSupport(signal, true, detail)
         } catch (e: Exception) {
             unsupported(signal, "구독 실패: ${e.javaClass.simpleName} ${e.message}")
         }
@@ -277,7 +328,7 @@ class VehicleSignalMonitor(
 
     private fun unsupported(signal: Signal, detail: String?) {
         Log.w(MainActivity.TAG, "[사용 안 함] ${signal.label} ($detail)")
-        listener.onSupport(signal, false, detail ?: "")
+        if (!stopped) listener.onSupport(signal, false, detail ?: "")
     }
 
     private fun failed(signal: Signal, area: String?, e: Exception) {
@@ -285,6 +336,7 @@ class VehicleSignalMonitor(
     }
 
     private fun signal(signal: Signal, area: String?, value: String, raw: Any?, place: String? = area) {
+        if (stopped) return
         Log.i(MainActivity.TAG, "[신호] ${signal.label}${place?.let { " $it" } ?: ""} = $value")
         listener.onSignal(signal, area, place, value, raw)
     }

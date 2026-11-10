@@ -18,9 +18,14 @@ import java.util.Locale
  * 표준 android.speech.tts.TextToSpeech는 Pleos 에뮬레이터에서 엔진을 찾지 못해 사용하지 않는다.
  */
 class KoreanSpeaker(
-    context: Context,
+    engineFactory: () -> TtsEngine,
     private val callbacks: Callbacks,
+    /** (android.util.Log 우선순위, 메시지). 단위 테스트에서는 android.util.Log 대신 가짜를 넣는다. */
+    private val logger: (priority: Int, message: String) -> Unit = ::androidLog,
 ) : Speaker {
+    /** 앱에서 쓰는 생성자: Pleos TTS SDK(ON_DEVICE)를 쓴다. */
+    constructor(context: Context, callbacks: Callbacks) : this({ PleosTtsEngine(context) }, callbacks)
+
     interface Callbacks {
         fun onStatus(message: String)
         fun onStart()
@@ -34,7 +39,7 @@ class KoreanSpeaker(
     /** SDK는 initialize() 전에 stop()/release()를 부르면 예외를 던진다 (화면 재생성으로 start 전에 onDestroy가 오는 경우). */
     private var started = false
 
-    private val tts = TextToSpeech(context.applicationContext, Mode.ON_DEVICE)
+    private val tts = timed("TextToSpeech 생성") { engineFactory() }
 
     private val eventListener = object : EventListener {
         override fun onReady() = Unit
@@ -49,10 +54,12 @@ class KoreanSpeaker(
     fun start() {
         if (started) return
         started = true
-        tts.initialize(object : OnInitializeListener {
+        timed("initialize") { tts.initialize(object : OnInitializeListener {
             override fun onSuccess() {
-                tts.addEventListener(eventListener)
-                tts.setLocale(Locale.KOREA)
+                timed("addEventListener·setLocale") {
+                    tts.addEventListener(eventListener)
+                    tts.setLocale(Locale.KOREA)
+                }
                 ready = true
                 log("TTS 초기화 성공 (Pleos TTS SDK, ON_DEVICE, ko-KR)")
                 callbacks.onStatus("음성 준비 완료")
@@ -62,7 +69,7 @@ class KoreanSpeaker(
                 log("TTS 초기화 실패: $errorType", error = true)
                 callbacks.onStatus("음성 초기화 실패: $errorType")
             }
-        })
+        }) }
     }
 
     override fun speak(text: String): Boolean {
@@ -70,25 +77,71 @@ class KoreanSpeaker(
             log("아직 준비되지 않아 재생하지 않음", error = true)
             return false
         }
-        tts.speak(text)
+        timed("speak") { tts.speak(text) }
         log("speak 요청: \"$text\"")
         return true
     }
 
     override fun stop() {
         if (!started) return
-        tts.stop()
+        timed("stop") { tts.stop() }
         log("stop 요청")
     }
 
     fun shutdown() {
         if (!started) return
-        tts.stop()
-        tts.removeEventListener(eventListener)
-        tts.release()
+        timed("shutdown") {
+            tts.stop()
+            tts.removeEventListener(eventListener)
+            tts.release()
+        }
     }
 
-    private fun log(message: String, error: Boolean = false) {
-        if (error) Log.e(MainActivity.TAG, message) else Log.i(MainActivity.TAG, message)
+    /**
+     * TTS SDK 호출 시간을 잰다. 이 클래스의 호출은 메인 스레드에서 일어나므로,
+     * 오래 걸리면 화면이 멈춘다. 시험에서 확인할 수 있게 [호출 시간] 로그를 남긴다 (50ms 이상은 경고).
+     */
+    private inline fun <T> timed(name: String, block: () -> T): T {
+        val begin = System.nanoTime()
+        val result = block()
+        val ms = (System.nanoTime() - begin) / 1_000_000
+        logger(if (ms >= SLOW_CALL_MS) Log.WARN else Log.INFO, "[호출 시간] TTS $name ${ms}ms (스레드 ${Thread.currentThread().name})")
+        return result
     }
+
+    private fun log(message: String, error: Boolean = false) = logger(if (error) Log.ERROR else Log.INFO, message)
+
+    private companion object {
+        const val SLOW_CALL_MS = 50L
+
+        fun androidLog(priority: Int, message: String) {
+            Log.println(priority, MainActivity.TAG, message)
+        }
+    }
+}
+
+/**
+ * Pleos TTS SDK 중 이 앱이 쓰는 호출만 모은 것. 단위 테스트에서는 가짜 엔진으로 바꾼다.
+ * SDK는 initialize() 전에 stop()/release() 등을 부르면 UninitializedPropertyAccessException을 던진다.
+ */
+interface TtsEngine {
+    fun initialize(listener: OnInitializeListener)
+    fun addEventListener(listener: EventListener)
+    fun removeEventListener(listener: EventListener)
+    fun setLocale(locale: Locale)
+    fun speak(text: String)
+    fun stop()
+    fun release()
+}
+
+/** 실제 Pleos TextToSpeech SDK (ON_DEVICE 모드만). */
+class PleosTtsEngine(context: Context) : TtsEngine {
+    private val tts = TextToSpeech(context.applicationContext, Mode.ON_DEVICE)
+    override fun initialize(listener: OnInitializeListener) = tts.initialize(listener)
+    override fun addEventListener(listener: EventListener) = tts.addEventListener(listener)
+    override fun removeEventListener(listener: EventListener) = tts.removeEventListener(listener)
+    override fun setLocale(locale: Locale) = tts.setLocale(locale)
+    override fun speak(text: String) = tts.speak(text)
+    override fun stop() = tts.stop()
+    override fun release() = tts.release()
 }

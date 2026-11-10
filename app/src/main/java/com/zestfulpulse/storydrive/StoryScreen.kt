@@ -45,7 +45,7 @@ data class DebugInfo(val support: List<String>, val rawSignals: List<String>, va
  * 이야기 재생 화면 (작업지시서 6장, 시안 1번 단순화). 가로형, 큰 글씨.
  * - 상단: 앱 이름. **앱 이름을 길게 누르면 디버그 표시를 켜고 끈다** (녹화 때는 꺼 둔다).
  * - 왼쪽: 작은 제목 + 지금 읽는 문장(큰 글씨)
- * - 오른쪽: "차가 들려준 신호" 목록, 방금 반영된 항목은 주황색
+ * - 오른쪽: "차가 들려준 신호" 목록, 방금 반영된 항목은 주황색. 차량 신호 확인 중에는 [vehicleStatus]를 보인다
  * - 아래: "이야기 시작", "이야기 잠시 멈추기"
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -53,6 +53,7 @@ data class DebugInfo(val support: List<String>, val rawSignals: List<String>, va
 fun StoryScreen(
     currentLine: String,
     entries: List<SignalEntry>,
+    vehicleStatus: String?,
     canStart: Boolean,
     showDebug: Boolean,
     debug: DebugInfo,
@@ -106,7 +107,9 @@ fun StoryScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(text = "차가 들려준 신호", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = StoryColors.Ink)
-                if (entries.isEmpty()) {
+                if (vehicleStatus != null) {
+                    Text(text = vehicleStatus, fontSize = 24.sp, color = StoryColors.Ink.copy(alpha = 0.6f))
+                } else if (entries.isEmpty()) {
                     Text(text = "아직 신호가 없어요", fontSize = 24.sp, color = StoryColors.Ink.copy(alpha = 0.6f))
                 }
                 entries.forEachIndexed { index, entry ->

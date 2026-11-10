@@ -82,6 +82,12 @@ class MainActivity : ComponentActivity() {
             StoryScreen(
                 currentLine = currentLine.value,
                 entries = acceptedEvents.toList(),
+                // 차량 신호 확인은 백그라운드에서 신호별로 끝난다. 모두 끝날 때까지 신호 목록 자리에 진행 상황을 보인다.
+                vehicleStatus = if (support.size < Signal.entries.size) {
+                    "차량 신호 연결 중 (${support.size}/${Signal.entries.size})"
+                } else {
+                    null
+                },
                 canStart = true, // 주행 중 비활성은 M5에서
                 showDebug = showDebug.value,
                 debug = DebugInfo(
@@ -111,6 +117,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // 앱 실행 시간(심사 기준 10초) 단축: 첫 화면을 먼저 그린 뒤 음성·차량 SDK를 시작한다.
+        // 차량 SDK는 monitor 안의 전용 스레드에서 돌고, 여기서는 작업을 넘기기만 한다.
         window.decorView.post {
             if (isDestroyed) return@post
             Log.i(TAG, "첫 화면 이후 SDK 시작")
@@ -126,8 +133,13 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /** SDK 스레드에서 온 콜백을 메인 스레드로 넘긴다. 화면이 이미 닫혔으면 버린다. */
     private fun onMain(block: () -> Unit) {
-        if (Looper.myLooper() == Looper.getMainLooper()) block() else main.post(block)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (!isDestroyed) block()
+        } else {
+            main.post { if (!isDestroyed) block() }
+        }
     }
 
     private fun refreshLine() {

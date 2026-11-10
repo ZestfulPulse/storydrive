@@ -9,6 +9,7 @@ import org.json.JSONObject
 /** assets/scenes.json(작업지시서 5장)을 읽어 [SceneBook]을 만든다. 모르는 사건 이름은 건너뛴다. */
 object SceneLoader {
     fun load(context: Context, fileName: String = "scenes.json"): SceneBook {
+        val begin = android.os.SystemClock.elapsedRealtime()
         val json = JSONObject(context.assets.open(fileName).bufferedReader(Charsets.UTF_8).use { it.readText() })
         val scenesJson = json.getJSONObject("scenes")
         val scenes = mutableMapOf<StoryEvent, List<String>>()
@@ -21,7 +22,8 @@ object SceneLoader {
             val array = scenesJson.getJSONArray(key)
             scenes[event] = List(array.length()) { array.getString(it) }
         }
-        Log.i(MainActivity.TAG, "장면 불러옴: ${scenes.mapValues { it.value.size }}")
+        val ms = android.os.SystemClock.elapsedRealtime() - begin
+        Log.i(MainActivity.TAG, "장면 불러옴: ${scenes.mapValues { it.value.size }} [호출 시간] scenes.json ${ms}ms")
         return SceneBook(scenes)
     }
 }
