@@ -31,6 +31,9 @@ class KoreanSpeaker(
 
     @Volatile private var ready = false
 
+    /** SDK는 initialize() 전에 stop()/release()를 부르면 예외를 던진다 (화면 재생성으로 start 전에 onDestroy가 오는 경우). */
+    private var started = false
+
     private val tts = TextToSpeech(context.applicationContext, Mode.ON_DEVICE)
 
     private val eventListener = object : EventListener {
@@ -44,6 +47,8 @@ class KoreanSpeaker(
 
     /** SDK 초기화를 시작한다. 첫 화면을 그린 뒤 호출한다 (앱 실행 시간 단축). */
     fun start() {
+        if (started) return
+        started = true
         tts.initialize(object : OnInitializeListener {
             override fun onSuccess() {
                 tts.addEventListener(eventListener)
@@ -71,11 +76,13 @@ class KoreanSpeaker(
     }
 
     override fun stop() {
+        if (!started) return
         tts.stop()
         log("stop 요청")
     }
 
     fun shutdown() {
+        if (!started) return
         tts.stop()
         tts.removeEventListener(eventListener)
         tts.release()

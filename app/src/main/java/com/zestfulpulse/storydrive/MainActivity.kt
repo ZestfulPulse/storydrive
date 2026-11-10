@@ -112,6 +112,7 @@ class MainActivity : ComponentActivity() {
 
         // 앱 실행 시간(심사 기준 10초) 단축: 첫 화면을 먼저 그린 뒤 음성·차량 SDK를 시작한다.
         window.decorView.post {
+            if (isDestroyed) return@post
             Log.i(TAG, "첫 화면 이후 SDK 시작")
             speaker.start()
             monitor.start()
