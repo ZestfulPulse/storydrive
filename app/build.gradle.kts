@@ -16,8 +16,29 @@ android {
         versionName = "0.1.0"
     }
 
+    // 릴리스 서명: 값은 저장소가 아니라 사용자 홈의 ~/.gradle/gradle.properties에서 읽는다.
+    // 네 값이 모두 있을 때만 서명 설정을 만든다 (없으면 assembleRelease는 서명 안 된 APK를 만든다).
+    val releaseStoreFile = providers.gradleProperty("STORYDRIVE_RELEASE_STORE_FILE").orNull
+    val releaseStorePassword = providers.gradleProperty("STORYDRIVE_RELEASE_STORE_PASSWORD").orNull
+    val releaseKeyAlias = providers.gradleProperty("STORYDRIVE_RELEASE_KEY_ALIAS").orNull
+    val releaseKeyPassword = providers.gradleProperty("STORYDRIVE_RELEASE_KEY_PASSWORD").orNull
+    val hasReleaseSigning = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+        .all { !it.isNullOrBlank() }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
