@@ -2,7 +2,7 @@
 
 ![스토리드라이브 앱 화면 (Pleos Connect 에뮬레이터)](docs/images/storydrive-main.png)
 
-> 현재 진행 상황: M0~M3 완료(차량 신호 구독, Pleos TTS 음성, 사건 기반 이야기 재생). APK는 [Releases](https://github.com/ZestfulPulse/storydrive/releases)에 추가 예정
+> 현재 진행 상황: M0~M4 완료(차량 신호 구독, Pleos TTS 음성, 사건 기반 이야기 재생, 이야기 화면과 신호 기록). APK는 [Releases](https://github.com/ZestfulPulse/storydrive/releases)에 추가 예정
 
 뒷좌석 아이를 위한 Pleos Connect 차량용 이야기 앱 시제품입니다.
 현대자동차그룹 차량용 앱 개발 공모전 출품작입니다.
