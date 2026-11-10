@@ -17,9 +17,9 @@
 - 재현 방법(수정 전 빌드에서 매번 재현됨): `am start` 후 0.5초 안에 `adb shell settings put --user 10 system font_scale 1.15`. 시험 뒤에는 `settings delete --user 10 system font_scale`로 되돌린다.
 
 ### 보관한 릴리스 APK (`f6589d7`에서 빌드)
-- 경로: `C:/Users/cwone/AppData/Local/Temp/claude/C--Users-cwone-storydrive/c8a07b06-b0e2-4056-a99a-6a2cfd11975f/scratchpad/release/storydrive-v0.1.0.apk`
+- 경로: `C:/Users/cwone/storydrive-release/storydrive-v0.1.0.apk` (저장소·키스토어 폴더와 분리)
 - SHA-256: `10d5fca70c9685215b5ee63958759ba44b402bfa2c2d9de4ce27120c364742cb`
-- 임시 폴더라 지워질 수 있다. 업로드 전에 SHA-256을 다시 확인하고, 다르거나 파일이 없으면 `f6589d7`에서 다시 빌드한다(빌드할 때마다 해시가 달라질 수 있으니 새 해시를 기록한다).
+- 업로드 전에 SHA-256을 다시 확인한다. 다르거나 파일이 없으면 `f6589d7`에서 다시 빌드하고, 새 해시를 기록한 뒤 그 APK로 시험부터 다시 한다.
 
 ## 2. 지금까지의 시험 결과 (2026-11-10)
 - 단위 테스트: 35개 모두 통과 (`f6589d7`, 강제 재실행).
@@ -52,7 +52,7 @@
 - B는 adb 탭으로 시간 창을 맞추기 어렵다. 필요하면 사용자가 화면에서 직접 누르고, Claude는 로그만 확인한다.
 - 시험 중 에뮬레이터 부하가 높으면(load average 10 이상) 기록해 둔다.
 
-## 4. 릴리스 판단 기준 (초안, 사용자 확인 필요)
+## 4. 릴리스 판단 기준 (2026-11-10 사용자 확정)
 아래를 모두 만족하면 v0.1.0 태그·Releases를 만들기 전에 사용자에게 결과를 보여주고 승인을 받는다.
 1. 단위 테스트 35개 모두 통과
 2. A: 유효 시험에서 앱 종료 0건 (이번 2회 + 다음 시험 유효분 합산 3회 이상)
