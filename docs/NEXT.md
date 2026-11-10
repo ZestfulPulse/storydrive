@@ -1,7 +1,10 @@
 # 다음 작업 (2026-11-10 기준)
 
-마감: 2026-11-14. 완료: M0~M4 (푸시됨, `origin/main` = `3fea23e`). ANR 수정과 B 단위 테스트는 v0.1.0 커밋에 들어간다.
-**v0.1.0 태그와 Releases는 아직 만들지 않았다.** 아래 시험을 마치고 사용자가 승인한 뒤에 만든다.
+마감: 2026-11-14. 완료: M0~M4, v0.1.0 릴리스. ANR 수정과 B 단위 테스트는 `fa15e90`, 문서는 `330f48e`.
+**v0.1.0 릴리스 완료 (2026-11-10, 사용자 승인).** 태그 `v0.1.0` → `330f48e`, Release: https://github.com/ZestfulPulse/storydrive/releases/tag/v0.1.0
+- APK: https://github.com/ZestfulPulse/storydrive/releases/download/v0.1.0/storydrive-v0.1.0.apk (SHA-256 `fbb19ea3…6e4c`)
+- 로그아웃 상태 확인: Releases 페이지 200, 제목·SHA-256 표시, APK 다운로드 200(38,910,385바이트), 받은 파일 SHA-256 일치
+- Release 설명 원본: `C:/Users/cwone/storydrive-release/release_notes.md`
 
 ## 1. 현재 상태: 릴리스 서명과 크래시 수정
 
@@ -108,7 +111,7 @@
 3. B: 유효 시험 1회 이상, 종료 0건 (사용자가 직접 시험해도 됨)
 4. 원인 불명 종료: 다음 시험에서 다시 생기지 않거나, exit-info·crash 로그로 원인이 앱 밖(시스템 부하 등)임을 확인
 5. C: 매 회차 음성 시작·중지 정상
-6. 업로드할 APK의 SHA-256이 시험한 APK와 같고, 서명 인증서가 위의 릴리스 인증서와 같음
+6. 업로드할 APK의 SHA-256이 시험한 APK와 같고, 서명 인증서가 위의 릴리스 인증서와 같음 — 업로드 APK는 Cold boot 시험 APK(a8ee4724)와 KoreanSpeaker의 SDK 호출 분리만 다르며, 일반 실행과 단위 테스트 40개로 확인함 (2026-11-10 사용자 승인)
 
 ### 2026-11-10 사용자 결정 (기준 조정)
 - 3번 B: 에뮬레이터에서 SDK 시작→TTS 준비 구간이 0.2~0.7초로 짧아 손·자동 탭으로 맞출 수 없었다. **"TTS·차량 SDK 준비 전에 이야기 잠시 멈추기를 눌러도 안전하다"를 단위 테스트(`PauseBeforeReadyTest`)로 검증해 3번을 대신한다.**
