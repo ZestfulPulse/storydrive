@@ -7,23 +7,9 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.zestfulpulse.storydrive.story.Cancellable
 import com.zestfulpulse.storydrive.story.DetectedEvent
 import com.zestfulpulse.storydrive.story.EventDetector
@@ -41,7 +27,8 @@ class MainActivity : ComponentActivity() {
     private val status = mutableStateOf("음성 준비 중…")
     private val currentLine = mutableStateOf("")
     private val support = mutableStateMapOf<Signal, Boolean>()
-    private val acceptedEvents = mutableStateListOf<String>()
+    private val acceptedEvents = mutableStateListOf<SignalEntry>()
+    private val showDebug = mutableStateOf(false)
     private val signalLog = mutableStateListOf<String>()
 
     private lateinit var speaker: KoreanSpeaker
@@ -90,47 +77,44 @@ class MainActivity : ComponentActivity() {
                 refreshLine()
             }
         })
-        monitor.start()
 
         setContent {
-            Row(
-                modifier = Modifier.fillMaxSize().background(SKY).padding(32.dp),
-                horizontalArrangement = Arrangement.spacedBy(32.dp),
-            ) {
-                Column(
-                    modifier = Modifier.weight(1.2f).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(text = "스토리드라이브", fontSize = 36.sp, color = INK)
-                    Text(text = "불꼬와 구름 섬 가는 길", fontSize = 18.sp, color = INK)
-                    Text(text = currentLine.value.ifEmpty { "…" }, fontSize = 30.sp, color = INK)
-                    Button(onClick = { director.handle(DetectedEvent(StoryEvent.START)); refreshLine() }) {
-                        Text(text = "이야기 시작", fontSize = 24.sp)
-                    }
-                    Text(text = status.value, fontSize = 16.sp, color = INK)
-                }
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(text = "차가 들려준 신호", fontSize = 24.sp, color = INK)
-                    acceptedEvents.forEachIndexed { i, line ->
-                        Text(text = line, fontSize = 18.sp, color = if (i == 0) ORANGE else INK)
-                    }
-                    Text(text = "신호 지원 상태", fontSize = 18.sp, color = INK, modifier = Modifier.padding(top = 12.dp))
-                    Signal.entries.forEach { signal ->
+            StoryScreen(
+                currentLine = currentLine.value,
+                entries = acceptedEvents.toList(),
+                canStart = true, // 주행 중 비활성은 M5에서
+                showDebug = showDebug.value,
+                debug = DebugInfo(
+                    support = Signal.entries.map { signal ->
                         val state = when (support[signal]) {
                             true -> "구독 중"
                             false -> "이 차량에서는 사용 안 함"
                             null -> "확인 중…"
                         }
-                        Text(text = "${signal.label}: $state", fontSize = 14.sp, color = INK)
-                    }
-                    Text(text = "최근 원시 신호", fontSize = 18.sp, color = INK, modifier = Modifier.padding(top = 12.dp))
-                    signalLog.take(6).forEach { Text(text = it, fontSize = 14.sp, color = INK) }
-                }
-            }
+                        "${signal.label}: $state"
+                    },
+                    rawSignals = signalLog.toList(),
+                    status = status.value,
+                ),
+                onStart = {
+                    Log.i(TAG, "[버튼] 이야기 시작")
+                    director.handle(DetectedEvent(StoryEvent.START))
+                    refreshLine()
+                },
+                onPause = {
+                    Log.i(TAG, "[버튼] 이야기 잠시 멈추기")
+                    director.stopStory()
+                    currentLine.value = "이야기를 잠시 멈췄어요. \"이야기 시작\"을 누르면 다시 들려줄게요."
+                },
+                onToggleDebug = { showDebug.value = !showDebug.value },
+            )
+        }
+
+        // 앱 실행 시간(심사 기준 10초) 단축: 첫 화면을 먼저 그린 뒤 음성·차량 SDK를 시작한다.
+        window.decorView.post {
+            Log.i(TAG, "첫 화면 이후 SDK 시작")
+            speaker.start()
+            monitor.start()
         }
     }
 
@@ -149,9 +133,24 @@ class MainActivity : ComponentActivity() {
         narrator.currentText?.let { currentLine.value = it }
     }
 
+    /** "차가 들려준 신호" 목록에 추가. 차 신호가 아닌 START·IDLE은 넣지 않는다. */
     private fun addAccepted(d: DetectedEvent) {
-        val where = d.source?.let { " ($it)" } ?: ""
-        addLog(acceptedEvents, "${d.event.label}$where")
+        val text = when (d.event) {
+            StoryEvent.STOP -> "브레이크를 밟았어요"
+            StoryEvent.GO -> "다시 출발했어요"
+            StoryEvent.TURN_LEFT -> "왼쪽 깜빡이를 켰어요"
+            StoryEvent.TURN_RIGHT -> "오른쪽 깜빡이를 켰어요"
+            StoryEvent.RAIN_ON -> "와이퍼가 움직여요"
+            StoryEvent.RAIN_OFF -> "와이퍼가 멈췄어요"
+            StoryEvent.WARM -> if (d.rearSeat) "뒷좌석 열선이 켜졌어요" else "열선이 켜졌어요"
+            StoryEvent.DOOR_OPEN -> "문이 열렸어요"
+            StoryEvent.BELT_WARN -> "안전벨트가 풀렸어요"
+            StoryEvent.RESUME -> "다시 준비됐어요"
+            StoryEvent.START, StoryEvent.IDLE -> return
+        }
+        val time = SimpleDateFormat("HH:mm", Locale.KOREA).format(Date())
+        acceptedEvents.add(0, SignalEntry(time, text))
+        if (acceptedEvents.size > MAX_ENTRIES) acceptedEvents.removeAt(acceptedEvents.lastIndex)
     }
 
     private fun addLog(list: MutableList<String>, text: String) {
@@ -163,8 +162,6 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val TAG = "StoryDrive"
         private const val MAX_LOG = 8
-        private val SKY = Color(0xFFCFE4F2)
-        private val INK = Color(0xFF233050)
-        private val ORANGE = Color(0xFFF27A2E)
+        private const val MAX_ENTRIES = 7
     }
 }

@@ -117,4 +117,19 @@ class StoryDirectorTest {
         clock.advance(60_000)
         assertEquals("DOOR_OPEN 장면", speaker.spoken.last())
     }
+
+    @Test fun `이야기 잠시 멈추기를 누르면 지금 문장을 멈추고 START 전까지 사건을 무시한다`() {
+        send(StoryEvent.START)
+        send(StoryEvent.TURN_LEFT)
+        director.stopStory()
+        assertEquals(1, speaker.stopCount)
+        assertTrue(narrator.queued.isEmpty())
+        speaker.finished(); narrator.onStop()
+        assertFalse(send(StoryEvent.STOP))
+        assertFalse(send(StoryEvent.DOOR_OPEN))
+        clock.advance(60_000)
+        assertEquals(1, speaker.spoken.size)            // IDLE도 없음
+        assertTrue(send(StoryEvent.START))
+        assertTrue(send(StoryEvent.TURN_RIGHT))
+    }
 }

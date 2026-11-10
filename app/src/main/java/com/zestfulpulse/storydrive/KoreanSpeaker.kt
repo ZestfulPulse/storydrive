@@ -42,7 +42,8 @@ class KoreanSpeaker(
         override fun onError(errorType: ErrorType) { log("재생 오류: $errorType", error = true); callbacks.onError() }
     }
 
-    init {
+    /** SDK 초기화를 시작한다. 첫 화면을 그린 뒤 호출한다 (앱 실행 시간 단축). */
+    fun start() {
         tts.initialize(object : OnInitializeListener {
             override fun onSuccess() {
                 tts.addEventListener(eventListener)

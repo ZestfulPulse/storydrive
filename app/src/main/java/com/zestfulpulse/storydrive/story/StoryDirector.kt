@@ -9,6 +9,8 @@ package com.zestfulpulse.storydrive.story
  * - WARM: 뒷좌석 우선, 앞좌석 허용. 앞좌석 WARM 뒤 8초 안에 뒷좌석 WARM이 오면 무시하지 않고 받아들인다.
  *   (그 반대, 즉 뒷좌석 WARM 뒤의 앞좌석 WARM은 무시한다.)
  * - IDLE: START 이후, 멈춤이 아니고 재생이 끝난 뒤 [idleMs](25초) 동안 사건이 없으면 IDLE 장면.
+ * - 사용자가 "이야기 잠시 멈추기"를 누르면([stopStory]) 다시 START 할 때까지 모든 사건을 무시한다.
+ *   (앱을 켠 뒤 처음 START 전에는 사건에 반응한다.)
  */
 class StoryDirector(
     private val scenes: SceneBook,
@@ -27,6 +29,8 @@ class StoryDirector(
         private set
     var paused = false
         private set
+    var stoppedByUser = false
+        private set
 
     /** 반영된 사건 알림 (화면 목록용) */
     var onAccepted: (DetectedEvent) -> Unit = {}
@@ -37,6 +41,10 @@ class StoryDirector(
 
     fun handle(detected: DetectedEvent): Boolean {
         val event = detected.event
+        if (stoppedByUser && event != StoryEvent.START) {
+            log("이야기 멈춤(사용자) 중 무시: ${event.name}")
+            return false
+        }
         if (isDuplicate(detected)) {
             log("중복 무시: ${event.name}")
             return false
@@ -69,7 +77,10 @@ class StoryDirector(
                 narrator.interrupt(line)
             }
             else -> {
-                if (event == StoryEvent.START) started = true
+                if (event == StoryEvent.START) {
+                    started = true
+                    stoppedByUser = false
+                }
                 narrator.enqueue(line)
             }
         }
@@ -81,6 +92,7 @@ class StoryDirector(
     /** 사용자가 "이야기 잠시 멈추기"를 눌렀을 때 (M4에서 사용) */
     fun stopStory() {
         started = false
+        stoppedByUser = true
         cancelIdle()
         narrator.clear()
     }
